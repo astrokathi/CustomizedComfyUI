@@ -1,0 +1,21 @@
+{
+  "llm_providers": {
+    "nvidia_nemotron": {
+      "name": "NVIDIA Nemotron-3 Ultra",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "model": "nvidia/nemotron-ultra-253b-v1",
+      "api_key_env": "NVIDIA_API_KEY",
+      "compatible_with": "openai",
+      "notes": "Free tier. Rate-limited. OpenAI-compatible endpoint."
+    },
+    "ollama": {
+      "name": "Ollama (Local)",
+      "api_base": "http://localhost:11434",
+      "model": "llama3",
+      "api_key_env": null,
+      "compatible_with": "openai",
+      "notes": "Running natively on host. No API key needed. Change model as desired."
+    }
+  },
+  "default_provider": "nvidia_nemotron"
+}

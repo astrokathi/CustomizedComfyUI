@@ -1,0 +1,18 @@
+#
+# ComfyUI Extra Model Paths Configuration
+# Points ComfyUI to the project's data/models/ directory
+#
+comfyui_project:
+  base_path: /Volumes/Kathi/AntiGravity/ComfyUI/data/models/
+  checkpoints: checkpoints/
+  loras: loras/
+  vae: vae/
+  controlnet: controlnet/
+  upscale_models: upscale_models/
+  clip: clip/
+  clip_vision: clip_vision/
+  embeddings: embeddings/
+  diffusion_models: diffusion_models/
+  configs: configs/
+  text_encoders: text_encoders/
+  latent_upscale_models: latent_upscale_models/

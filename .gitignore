@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Data directories (large files)
+data/models/
+data/output/
+data/input/
+data/temp/
+data/user/
+
+# Cache
+cache/
+tmp/
+
+# Database
+db/
+
+# ComfyUI app source (cloned separately)
+app/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Auth
+nginx/.htpasswd

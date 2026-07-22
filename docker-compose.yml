@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    platform: linux/arm64
+    container_name: comfyui-postgres
+    restart: unless-stopped
+    shm_size: 256mb
+    env_file:
+      - .env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-comfyui} -d $${POSTGRES_DB:-comfyui}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

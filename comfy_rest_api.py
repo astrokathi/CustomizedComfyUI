@@ -217,13 +217,16 @@ async def generate_image(request):
                     "type": folder_type
                 })
                 
-                # Download the actual image bytes
-                async with session.get(f"{COMFY_URL}/view?{url_params}") as img_resp:
-                    img_bytes = await img_resp.read()
-                    
-                gen_image_b64 = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
+                # Instead of downloading base64, construct the static URL
+                path_parts = []
+                if subfolder:
+                    path_parts.append(subfolder)
+                path_parts.append(filename)
                 
-                # Generate the QR Code with config info
+                relative_path = "/".join(path_parts)
+                image_url = f"http://127.0.0.1:8000/output/{urllib.parse.quote(relative_path)}"
+                
+                # Generate the config info
                 config_data = {
                     "prompt": prompt,
                     "negative_prompt": negative_prompt,
@@ -239,13 +242,18 @@ async def generate_image(request):
                 
                 response_data = {
                     "status": "success",
-                    "image": gen_image_b64,
+                    "image_url": image_url,
                     "config": config_data
                 }
                 
                 if payload.get("qr_code") is True:
-                    qr_b64 = generate_qr_base64(config_data)
-                    response_data["qrcode"] = "data:image/png;base64," + qr_b64
+                    # Save QR code directly to output dir so we can serve it by URL too
+                    qr_img = qrcode.make(json.dumps(config_data))
+                    qr_filename = f"qr_{prompt_id}.png"
+                    qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "output", qr_filename)
+                    qr_img.save(qr_path)
+                    
+                    response_data["qrcode_url"] = f"http://127.0.0.1:8000/output/{urllib.parse.quote(qr_filename)}"
                 
                 return web.json_response(response_data)
         finally:
@@ -254,6 +262,9 @@ async def generate_image(request):
             asyncio.create_task(background_free_memory())
 
 app = web.Application(client_max_size=1024**3)
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+app.router.add_static('/output/', path=OUTPUT_DIR, name='output')
 app.router.add_get('/api/v1/models/{type}', get_models)
 app.router.add_post('/api/v1/generate', generate_image)
 

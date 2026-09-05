@@ -144,11 +144,13 @@ async def text_to_image(
                     ctx.info(f"Generation successful! {model_name} generated the image with CFG {data['config']['cfg']} and {data['config']['steps']} Steps.")
                     
                     # Return formatted Markdown containing the image and configuration
-                    b64_image = data.get("image", "")
+                    image_url = data.get("image_url", "")
                     config = data.get("config", {})
                     
                     md_response = f"### Image Generated Successfully!\n\n"
-                    md_response += f"![Generated Image]({b64_image})\n\n"
+                    md_response += f"![Generated Image]({image_url})\n\n"
+                    if "qrcode_url" in data:
+                        md_response += f"![QR Code]({data['qrcode_url']})\n\n"
                     md_response += f"**Model**: {config.get('model_name')}\n"
                     md_response += f"**Steps**: {config.get('steps')} | **CFG**: {config.get('cfg')}\n"
                     md_response += f"**Resolution**: {config.get('width')}x{config.get('height')}\n"

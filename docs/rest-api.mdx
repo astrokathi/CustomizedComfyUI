@@ -1,0 +1,104 @@
+---
+title: "ComfyUI REST API Reference"
+description: "Documentation for interacting with the ComfyUI REST API for text-to-image generation."
+---
+
+# ComfyUI REST API
+
+This API provides a seamless interface to generate AI images using ComfyUI as the backend engine. It automatically assigns the best default generation parameters based on the specific Checkpoint model you choose and embeds configuration metadata into a companion QR Code.
+
+## Authentication
+
+All endpoints require an API key to be passed in the headers. By default, the API key is `secret-key-123`, but this can be customized in the environment.
+
+You can provide the key using either:
+- `X-API-Key: <your-key>`
+- `Authorization: Bearer <your-key>`
+
+---
+
+## Endpoints
+
+### 1. Get Models
+
+Retrieve a list of available Checkpoint Safetensors from the local ComfyUI installation.
+
+**Endpoint:** `GET /api/v1/models/checkpoints`
+
+**cURL Example:**
+```bash
+curl -H "X-API-Key: secret-key-123" http://localhost:8000/api/v1/models/checkpoints
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "models": [
+    "DreamShaper_8_pruned.safetensors",
+    "v1-5-pruned-emaonly.safetensors"
+  ]
+}
+```
+
+---
+
+### 2. Generate Image
+
+Submits a text-to-image workflow to ComfyUI. The server synchronously waits for the generation to finish and returns two Base64 encoded strings: one for the image, and one for a QR Code containing the generation parameters.
+
+**Endpoint:** `POST /api/v1/generate`
+
+#### Request Payload
+Only the `prompt` parameter is mandatory. The rest are dynamically assigned based on the model.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | **Yes** | The positive text prompt describing the image. |
+| `negative_prompt` | string | No | What to avoid in the image. |
+| `model_name` | string | No | Default is `v1-5-pruned-emaonly.safetensors`. |
+| `cfg` | float | No | Classifier Free Guidance. Defaults to `7.5` for SD1.5, `7.0` for DreamShaper. |
+| `steps` | int | No | Denoising steps. Defaults to `25` for SD1.5, `30` for DreamShaper. |
+| `seed` | int | No | Random seed. Automatically generated if omitted. |
+| `width` | int | No | Image width. Defaults to `512` for SD1.5, `768` for DreamShaper. |
+| `height` | int | No | Image height. Defaults to `768` for SD1.5, `512` for DreamShaper. |
+| `qr_code` | boolean | No | Set to `true` to generate a configuration QR Code. Default `false`. |
+| `sampler_name` | string | No | Default `dpmpp_2m`. |
+| `scheduler` | string | No | Default `karras`. |
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/api/v1/generate \
+     -H "X-API-Key: secret-key-123" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "prompt": "masterpiece, best quality, beautiful sunset over a cyberpunk city",
+           "model_name": "DreamShaper_8_pruned.safetensors",
+           "qr_code": true
+         }'
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "status": "success",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...", 
+  "qrcode": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgA...",
+  "config": {
+    "prompt": "masterpiece, best quality, beautiful sunset over a cyberpunk city",
+    "negative_prompt": "",
+    "model_name": "DreamShaper_8_pruned.safetensors",
+    "cfg": "7.0",
+    "steps": "30",
+    "seed": 123456789,
+    "width": 768,
+    "height": 512,
+    "sampler_function": "dpmpp_2m",
+    "scheduler": "karras"
+  }
+}
+```
+
+## Error Codes
+- **`400 Bad Request`**: The JSON payload is malformed or the mandatory `prompt` is missing.
+- **`401 Unauthorized`**: Missing or incorrect API Key.
+- **`500 Internal Server Error`**: The ComfyUI backend failed to process the image.

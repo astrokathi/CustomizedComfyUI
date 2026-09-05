@@ -1,0 +1,165 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ComfyUI REST API",
+    "description": "A REST API wrapper for generating images using ComfyUI and Stable Diffusion 1.5 checkpoints.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/models/checkpoints": {
+      "get": {
+        "summary": "Get Checkpoint Models",
+        "description": "Retrieves a list of available safetensors checkpoint models from the ComfyUI installation.",
+        "responses": {
+          "200": {
+            "description": "A list of available models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid API Key"
+          }
+        }
+      }
+    },
+    "/api/v1/generate": {
+      "post": {
+        "summary": "Generate Image",
+        "description": "Generates a Text-to-Image based on the provided prompt and configuration parameters. The API automatically sets default values based on the model chosen.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["prompt"],
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "description": "The positive text prompt describing the desired image."
+                  },
+                  "negative_prompt": {
+                    "type": "string",
+                    "description": "The negative prompt detailing what to avoid in the image."
+                  },
+                  "model_name": {
+                    "type": "string",
+                    "default": "v1-5-pruned-emaonly.safetensors",
+                    "description": "The exact name of the checkpoint model file."
+                  },
+                  "cfg": {
+                    "type": "number",
+                    "description": "Classifier Free Guidance scale. Dynamically defaults to 7.5 or 7.0 depending on the model."
+                  },
+                  "steps": {
+                    "type": "integer",
+                    "description": "Number of denoising steps. Dynamically defaults to 25 or 30 depending on the model."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "description": "Random seed. If not provided, a random number is used."
+                  },
+                  "width": {
+                    "type": "integer",
+                    "description": "Image width. Dynamically defaults to 512 or 768 depending on the model."
+                  },
+                  "height": {
+                    "type": "integer",
+                    "description": "Image height. Dynamically defaults to 768 or 512 depending on the model."
+                  },
+                  "qr_code": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, generates a QR code containing the configuration metadata."
+                  },
+                  "sampler_name": {
+                    "type": "string",
+                    "default": "dpmpp_2m",
+                    "description": "The sampler algorithm."
+                  },
+                  "scheduler": {
+                    "type": "string",
+                    "default": "karras",
+                    "description": "The scheduler type."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully generated image.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "image": {
+                      "type": "string",
+                      "description": "Data URI containing the Base64 encoded PNG image (data:image/png;base64,...)."
+                    },
+                    "qrcode": {
+                      "type": "string",
+                      "description": "Data URI of the QR Code (data:image/png;base64,...). Only present if qr_code=true."
+                    },
+                    "config": {
+                      "type": "object",
+                      "description": "The exact configuration applied during generation."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Missing mandatory prompt"
+          },
+          "401": {
+            "description": "Unauthorized - Invalid API Key"
+          },
+          "500": {
+            "description": "Internal Server Error - ComfyUI backend failure"
+          }
+        }
+      }
+    }
+  }
+}

@@ -166,76 +166,86 @@ async def generate_image(request):
     client_id = str(uuid.uuid4())
     
     async with aiohttp.ClientSession() as session:
-        async with session.ws_connect(f"{COMFY_WS}?clientId={client_id}") as ws:
-            post_data = {"prompt": graph, "client_id": client_id}
-            async with session.post(f"{COMFY_URL}/prompt", json=post_data) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    raise web.HTTPInternalServerError(reason=f"ComfyUI Error: {err}")
-                resp_json = await resp.json()
-                prompt_id = resp_json["prompt_id"]
+        try:
+            async with session.ws_connect(f"{COMFY_WS}?clientId={client_id}") as ws:
+                post_data = {"prompt": graph, "client_id": client_id}
+                async with session.post(f"{COMFY_URL}/prompt", json=post_data) as resp:
+                    if resp.status != 200:
+                        err = await resp.text()
+                        raise web.HTTPInternalServerError(reason=f"ComfyUI Error: {err}")
+                    resp_json = await resp.json()
+                    prompt_id = resp_json["prompt_id"]
+                    
+                # Wait for the generation to finish
+                while True:
+                    msg = await ws.receive()
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        message = json.loads(msg.data)
+                        if message["type"] == "executing":
+                            data = message["data"]
+                            if data["node"] is None and data["prompt_id"] == prompt_id:
+                                break
                 
-            # Wait for the generation to finish
-            while True:
-                msg = await ws.receive()
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    message = json.loads(msg.data)
-                    if message["type"] == "executing":
-                        data = message["data"]
-                        if data["node"] is None and data["prompt_id"] == prompt_id:
-                            break
-            
-            # Fetch the generated image filename from history
-            async with session.get(f"{COMFY_URL}/history/{prompt_id}") as hist_resp:
-                history = await hist_resp.json()
-                history_data = history[prompt_id]
+                # Fetch the generated image filename from history
+                async with session.get(f"{COMFY_URL}/history/{prompt_id}") as hist_resp:
+                    history = await hist_resp.json()
+                    history_data = history[prompt_id]
+                    
+                outputs = history_data.get("outputs", {})
+                if "9" not in outputs or "images" not in outputs["9"]:
+                    raise web.HTTPInternalServerError(reason="Failed to find generated image in history")
+                    
+                image_info = outputs["9"]["images"][0]
+                filename = image_info["filename"]
+                subfolder = image_info["subfolder"]
+                folder_type = image_info["type"]
                 
-            outputs = history_data.get("outputs", {})
-            if "9" not in outputs or "images" not in outputs["9"]:
-                raise web.HTTPInternalServerError(reason="Failed to find generated image in history")
+                url_params = urllib.parse.urlencode({
+                    "filename": filename,
+                    "subfolder": subfolder,
+                    "type": folder_type
+                })
                 
-            image_info = outputs["9"]["images"][0]
-            filename = image_info["filename"]
-            subfolder = image_info["subfolder"]
-            folder_type = image_info["type"]
-            
-            url_params = urllib.parse.urlencode({
-                "filename": filename,
-                "subfolder": subfolder,
-                "type": folder_type
-            })
-            
-            # Download the actual image bytes
-            async with session.get(f"{COMFY_URL}/view?{url_params}") as img_resp:
-                img_bytes = await img_resp.read()
+                # Download the actual image bytes
+                async with session.get(f"{COMFY_URL}/view?{url_params}") as img_resp:
+                    img_bytes = await img_resp.read()
+                    
+                gen_image_b64 = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
                 
-            gen_image_b64 = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
-            
-            # Generate the QR Code with config info
-            config_data = {
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "model_name": model_name,
-                "cfg": str(cfg),
-                "steps": str(steps),
-                "seed": seed,
-                "width": width,
-                "height": height,
-                "sampler_function": sampler_name,
-                "scheduler": scheduler
-            }
-            
-            response_data = {
-                "status": "success",
-                "image": gen_image_b64,
-                "config": config_data
-            }
-            
-            if payload.get("qr_code") is True:
-                qr_b64 = generate_qr_base64(config_data)
-                response_data["qrcode"] = "data:image/png;base64," + qr_b64
-            
-            return web.json_response(response_data)
+                # Generate the QR Code with config info
+                config_data = {
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "model_name": model_name,
+                    "cfg": str(cfg),
+                    "steps": str(steps),
+                    "seed": seed,
+                    "width": width,
+                    "height": height,
+                    "sampler_function": sampler_name,
+                    "scheduler": scheduler
+                }
+                
+                response_data = {
+                    "status": "success",
+                    "image": gen_image_b64,
+                    "config": config_data
+                }
+                
+                if payload.get("qr_code") is True:
+                    qr_b64 = generate_qr_base64(config_data)
+                    response_data["qrcode"] = "data:image/png;base64," + qr_b64
+                
+                return web.json_response(response_data)
+        finally:
+            # Always explicitly free ComfyUI memory to prevent out-of-memory errors on next load
+            try:
+                free_payload = {"unload_models": True, "free_memory": True}
+                async with session.post(f"{COMFY_URL}/free", json=free_payload) as free_resp:
+                    if free_resp.status == 200:
+                        print("Memory successfully freed after execution.")
+            except Exception as e:
+                print(f"Error freeing memory: {e}")
 
 app = web.Application(client_max_size=1024**3)
 app.router.add_get('/api/v1/models/{type}', get_models)

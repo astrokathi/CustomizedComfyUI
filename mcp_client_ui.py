@@ -27,15 +27,16 @@ server_params = StdioServerParameters(
 )
 
 SYSTEM_PROMPT = """You are a highly capable AI Art Director. Your goal is to help the user generate stunning images using ComfyUI.
-You have access to two tools:
+You have access to THREE tools:
 1. `select_optimal_model`: Call this FIRST with the user's base request to determine the best model to use.
-2. `text_to_image`: Call this SECOND to actually generate the image.
+2. `ram_checker`: Call this SECOND to verify the system has enough memory to load the model. If it fails, use the recommended fallback model instead!
+3. `text_to_image`: Call this THIRD to actually generate the image using the final verified model name.
 
 IMPORTANT INSTRUCTIONS:
 - You MUST aggressively enhance the user's simple prompt into a highly detailed, comma-separated Stable Diffusion prompt BEFORE calling `text_to_image`. 
   - Add lighting, camera, aesthetic, and quality tags (e.g. "masterpiece, best quality, 8k resolution, cinematic lighting, sharp focus").
 - You MUST formulate a strong negative prompt (e.g. "(worst quality, low quality:1.3), blurry, bad anatomy").
-- You MUST pass the exact `model_name` returned by `select_optimal_model` into `text_to_image`.
+- You MUST pass the exact `model_name` (or the fallback if RAM check failed) into `text_to_image`.
 
 HOW TO USE TOOLS:
 To use a tool, you MUST output a JSON block inside backticks like this:
@@ -44,6 +45,15 @@ To use a tool, you MUST output a JSON block inside backticks like this:
   "tool": "select_optimal_model",
   "args": {
     "use_case_description": "the user's request"
+  }
+}
+```
+Or for the ram checker:
+```json
+{
+  "tool": "ram_checker",
+  "args": {
+    "model_name": "the model from select_optimal_model"
   }
 }
 ```

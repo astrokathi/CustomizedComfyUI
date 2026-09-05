@@ -1,5 +1,6 @@
 import os
 import aiohttp
+import psutil
 from mcp.server.fastmcp import FastMCP, Context
 
 mcp = FastMCP("ComfyUI-REST-API")
@@ -38,6 +39,35 @@ def select_optimal_model(use_case_description: str) -> str:
         reason = "Defaulting to DreamShaper 8 as it is the most versatile all-rounder."
 
     return f"Recommended Model: {model}\nReasoning: {reason}\nYou may now pass this model_name into the text_to_image tool."
+
+@mcp.tool()
+def ram_checker(model_name: str, ctx: Context) -> str:
+    """
+    Checks if the system has enough available RAM to load the requested model.
+    Must be called BEFORE text_to_image to ensure the model won't crash the server.
+    """
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024 ** 3)
+    
+    # Define thresholds
+    if "XL" in model_name or "Juggernaut" in model_name:
+        required_gb = 8.0
+        model_type = "SDXL"
+    else:
+        required_gb = 4.0
+        model_type = "SD1.5"
+        
+    ctx.info(f"RAM Check for {model_name} ({model_type}): {available_gb:.1f}GB available, {required_gb}GB required.")
+    
+    if available_gb >= required_gb:
+        result = f"System has enough RAM ({available_gb:.1f}GB available). You may proceed with loading {model_name}."
+        ctx.info(f"Model {model_name} approved for loading.")
+        return result
+    else:
+        fallback = "DreamShaper_8_pruned.safetensors"
+        result = f"WARNING: Insufficient RAM to load {model_name}. Only {available_gb:.1f}GB available, but {required_gb}GB is required. You MUST fallback to {fallback}."
+        ctx.info(f"Insufficient RAM. Forcing fallback to {fallback}.")
+        return result
 
 @mcp.tool()
 async def text_to_image(

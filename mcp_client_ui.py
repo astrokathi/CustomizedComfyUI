@@ -97,9 +97,12 @@ async def chat_with_agent(message, history):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     
     # Format Gradio history for OpenAI
-    for user_msg, assistant_msg in history:
-        messages.append({"role": "user", "content": user_msg})
-        messages.append({"role": "assistant", "content": assistant_msg})
+    for item in history:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            messages.append({"role": "user", "content": item[0]})
+            messages.append({"role": "assistant", "content": item[1]})
+        elif isinstance(item, dict):
+            messages.append({"role": item.get("role", "user"), "content": item.get("content", "")})
         
     messages.append({"role": "user", "content": message})
     

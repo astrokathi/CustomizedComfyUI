@@ -103,12 +103,23 @@ async def get_models(request):
 
 async def background_free_memory():
     """Fire-and-forget task to clear memory AFTER the response is sent back to the client."""
+    import gc
+    import subprocess
+    import sys
     try:
         async with aiohttp.ClientSession() as session:
             free_payload = {"unload_models": True, "free_memory": True}
             async with session.post(f"{COMFY_URL}/free", json=free_payload) as free_resp:
                 if free_resp.status == 200:
-                    print("Memory successfully freed in the background after execution.")
+                    print("ComfyUI VRAM successfully freed in the background.")
+        
+        # Force Python to aggressively release unreferenced RAM back to macOS
+        gc.collect()
+        
+        # Ask macOS to flush file system caches to disk
+        if sys.platform == "darwin":
+            subprocess.run(["sync"])
+            
     except Exception as e:
         print(f"Error freeing memory in background: {e}")
 

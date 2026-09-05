@@ -98,8 +98,19 @@ async def get_models(request):
                 models = data.get("CheckpointLoaderSimple", {}).get("input", {}).get("required", {}).get("ckpt_name", [])
                 if isinstance(models, list) and len(models) > 0 and isinstance(models[0], list):
                     models = models[0]
-                return web.json_response({"models": models})
+                return web.json_response({"status": "success", "models": models})
             return web.HTTPInternalServerError(reason="Failed to fetch from ComfyUI")
+
+async def background_free_memory():
+    """Fire-and-forget task to clear memory AFTER the response is sent back to the client."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            free_payload = {"unload_models": True, "free_memory": True}
+            async with session.post(f"{COMFY_URL}/free", json=free_payload) as free_resp:
+                if free_resp.status == 200:
+                    print("Memory successfully freed in the background after execution.")
+    except Exception as e:
+        print(f"Error freeing memory in background: {e}")
 
 def generate_qr_base64(data_dict):
     qr = qrcode.QRCode(
@@ -238,14 +249,9 @@ async def generate_image(request):
                 
                 return web.json_response(response_data)
         finally:
-            # Always explicitly free ComfyUI memory to prevent out-of-memory errors on next load
-            try:
-                free_payload = {"unload_models": True, "free_memory": True}
-                async with session.post(f"{COMFY_URL}/free", json=free_payload) as free_resp:
-                    if free_resp.status == 200:
-                        print("Memory successfully freed after execution.")
-            except Exception as e:
-                print(f"Error freeing memory: {e}")
+            # Always explicitly free ComfyUI memory to prevent out-of-memory errors on next load.
+            # We use asyncio.create_task so it happens asynchronously AFTER we return the response.
+            asyncio.create_task(background_free_memory())
 
 app = web.Application(client_max_size=1024**3)
 app.router.add_get('/api/v1/models/{type}', get_models)

@@ -31,7 +31,7 @@ fi
 
 # 1. Start the core ComfyUI Server (Port 8188)
 echo "🚀 Starting core ComfyUI server..."
-python server.py &
+bash scripts/start.sh > comfyui.log 2>&1 &
 COMFY_PID=$!
 
 # Wait for ComfyUI to initialize

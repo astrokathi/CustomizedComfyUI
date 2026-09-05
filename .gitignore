@@ -31,3 +31,6 @@ Thumbs.db
 
 # Auth
 nginx/.htpasswd
+
+# Logs
+*.log

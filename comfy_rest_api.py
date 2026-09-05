@@ -98,8 +98,30 @@ async def get_models(request):
                 models = data.get("CheckpointLoaderSimple", {}).get("input", {}).get("required", {}).get("ckpt_name", [])
                 if isinstance(models, list) and len(models) > 0 and isinstance(models[0], list):
                     models = models[0]
-                return web.json_response({"models": models})
+                return web.json_response({"status": "success", "models": models})
             return web.HTTPInternalServerError(reason="Failed to fetch from ComfyUI")
+
+async def background_free_memory():
+    """Fire-and-forget task to clear memory AFTER the response is sent back to the client."""
+    import gc
+    import subprocess
+    import sys
+    try:
+        async with aiohttp.ClientSession() as session:
+            free_payload = {"unload_models": True, "free_memory": True}
+            async with session.post(f"{COMFY_URL}/free", json=free_payload) as free_resp:
+                if free_resp.status == 200:
+                    print("ComfyUI VRAM successfully freed in the background.")
+        
+        # Force Python to aggressively release unreferenced RAM back to macOS
+        gc.collect()
+        
+        # Ask macOS to flush file system caches to disk
+        if sys.platform == "darwin":
+            subprocess.run(["sync"])
+            
+    except Exception as e:
+        print(f"Error freeing memory in background: {e}")
 
 def generate_qr_base64(data_dict):
     qr = qrcode.QRCode(
@@ -115,6 +137,17 @@ def generate_qr_base64(data_dict):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+def get_model_defaults(model_name):
+    defaults = {
+        "v1-5-pruned-emaonly.safetensors": {"cfg": 7.5, "steps": 25, "width": 512, "height": 512, "sampler_name": "euler_ancestral", "scheduler": "normal"},
+        "DreamShaper_8_pruned.safetensors": {"cfg": 6.5, "steps": 28, "width": 512, "height": 768, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "DreamShaperXL_Lightning.safetensors": {"cfg": 2.0, "steps": 6, "width": 1024, "height": 1024, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "DreamShaperXL_Turbo_v2.safetensors": {"cfg": 2.0, "steps": 6, "width": 1024, "height": 1024, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors": {"cfg": 1.5, "steps": 5, "width": 1344, "height": 768, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"},
+        "RealVisXL_V5.0_Lightning_fp16.safetensors": {"cfg": 1.5, "steps": 6, "width": 896, "height": 1152, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"}
+    }
+    return defaults.get(model_name, defaults["DreamShaper_8_pruned.safetensors"])
+
 async def generate_image(request):
     await check_auth(request)
     try:
@@ -126,26 +159,18 @@ async def generate_image(request):
     if not prompt:
         raise web.HTTPBadRequest(reason="'prompt' is mandatory")
         
-    model_name = payload.get("model_name", "v1-5-pruned-emaonly.safetensors")
+    model_name = payload.get("model_name", "DreamShaper_8_pruned.safetensors")
     negative_prompt = payload.get("negative_prompt", "")
     
     # Apply dynamic defaults based on model
-    if model_name == "DreamShaper_8_pruned.safetensors":
-        cfg = payload.get("cfg", 7.5)
-        steps = payload.get("steps", 30)
-        seed = payload.get("seed", random.randint(1, 999999999999999))
-        width = payload.get("width", 768)
-        height = payload.get("height", 512)
-    else:
-        # Default to v1_5_pruned_emaonly.safetensors values
-        cfg = payload.get("cfg", 7.5)
-        steps = payload.get("steps", 25)
-        seed = payload.get("seed", random.randint(1, 999999999999999))
-        width = payload.get("width", 512)
-        height = payload.get("height", 768)
-        
-    sampler_name = payload.get("sampler_name", "dpmpp_2m")
-    scheduler = payload.get("scheduler", "karras")
+    defaults = get_model_defaults(model_name)
+    cfg = payload.get("cfg", defaults["cfg"])
+    steps = payload.get("steps", defaults["steps"])
+    seed = payload.get("seed", random.randint(1, 999999999999999))
+    width = payload.get("width", defaults["width"])
+    height = payload.get("height", defaults["height"])
+    sampler_name = payload.get("sampler_name", defaults["sampler_name"])
+    scheduler = payload.get("scheduler", defaults["scheduler"])
     
     # Configure the graph template
     graph = json.loads(json.dumps(WORKFLOW_API))
@@ -163,78 +188,94 @@ async def generate_image(request):
     client_id = str(uuid.uuid4())
     
     async with aiohttp.ClientSession() as session:
-        async with session.ws_connect(f"{COMFY_WS}?clientId={client_id}") as ws:
-            post_data = {"prompt": graph, "client_id": client_id}
-            async with session.post(f"{COMFY_URL}/prompt", json=post_data) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    raise web.HTTPInternalServerError(reason=f"ComfyUI Error: {err}")
-                resp_json = await resp.json()
-                prompt_id = resp_json["prompt_id"]
+        try:
+            async with session.ws_connect(f"{COMFY_WS}?clientId={client_id}") as ws:
+                post_data = {"prompt": graph, "client_id": client_id}
+                async with session.post(f"{COMFY_URL}/prompt", json=post_data) as resp:
+                    if resp.status != 200:
+                        err = await resp.text()
+                        raise web.HTTPInternalServerError(reason=f"ComfyUI Error: {err}")
+                    resp_json = await resp.json()
+                    prompt_id = resp_json["prompt_id"]
+                    
+                # Wait for the generation to finish
+                while True:
+                    msg = await ws.receive()
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        message = json.loads(msg.data)
+                        if message["type"] == "executing":
+                            data = message["data"]
+                            if data["node"] is None and data["prompt_id"] == prompt_id:
+                                break
                 
-            # Wait for the generation to finish
-            while True:
-                msg = await ws.receive()
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    message = json.loads(msg.data)
-                    if message["type"] == "executing":
-                        data = message["data"]
-                        if data["node"] is None and data["prompt_id"] == prompt_id:
-                            break
-            
-            # Fetch the generated image filename from history
-            async with session.get(f"{COMFY_URL}/history/{prompt_id}") as hist_resp:
-                history = await hist_resp.json()
-                history_data = history[prompt_id]
+                # Fetch the generated image filename from history
+                async with session.get(f"{COMFY_URL}/history/{prompt_id}") as hist_resp:
+                    history = await hist_resp.json()
+                    history_data = history[prompt_id]
+                    
+                outputs = history_data.get("outputs", {})
+                if "9" not in outputs or "images" not in outputs["9"]:
+                    raise web.HTTPInternalServerError(reason="Failed to find generated image in history")
+                    
+                image_info = outputs["9"]["images"][0]
+                filename = image_info["filename"]
+                subfolder = image_info["subfolder"]
+                folder_type = image_info["type"]
                 
-            outputs = history_data.get("outputs", {})
-            if "9" not in outputs or "images" not in outputs["9"]:
-                raise web.HTTPInternalServerError(reason="Failed to find generated image in history")
+                url_params = urllib.parse.urlencode({
+                    "filename": filename,
+                    "subfolder": subfolder,
+                    "type": folder_type
+                })
                 
-            image_info = outputs["9"]["images"][0]
-            filename = image_info["filename"]
-            subfolder = image_info["subfolder"]
-            folder_type = image_info["type"]
-            
-            url_params = urllib.parse.urlencode({
-                "filename": filename,
-                "subfolder": subfolder,
-                "type": folder_type
-            })
-            
-            # Download the actual image bytes
-            async with session.get(f"{COMFY_URL}/view?{url_params}") as img_resp:
-                img_bytes = await img_resp.read()
+                # Instead of downloading base64, construct the static URL
+                path_parts = []
+                if subfolder:
+                    path_parts.append(subfolder)
+                path_parts.append(filename)
                 
-            gen_image_b64 = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
-            
-            # Generate the QR Code with config info
-            config_data = {
-                "prompt": prompt,
-                "negative_prompt": negative_prompt,
-                "model_name": model_name,
-                "cfg": str(cfg),
-                "steps": str(steps),
-                "seed": seed,
-                "width": width,
-                "height": height,
-                "sampler_function": sampler_name,
-                "scheduler": scheduler
-            }
-            
-            response_data = {
-                "status": "success",
-                "image": gen_image_b64,
-                "config": config_data
-            }
-            
-            if payload.get("qr_code") is True:
-                qr_b64 = generate_qr_base64(config_data)
-                response_data["qrcode"] = "data:image/png;base64," + qr_b64
-            
-            return web.json_response(response_data)
+                relative_path = "/".join(path_parts)
+                image_url = f"http://127.0.0.1:8000/output/{urllib.parse.quote(relative_path)}"
+                
+                # Generate the config info
+                config_data = {
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "model_name": model_name,
+                    "cfg": str(cfg),
+                    "steps": str(steps),
+                    "seed": seed,
+                    "width": width,
+                    "height": height,
+                    "sampler_function": sampler_name,
+                    "scheduler": scheduler
+                }
+                
+                response_data = {
+                    "status": "success",
+                    "image_url": image_url,
+                    "config": config_data
+                }
+                
+                if payload.get("qr_code") is True:
+                    # Save QR code directly to output dir so we can serve it by URL too
+                    qr_img = qrcode.make(json.dumps(config_data))
+                    qr_filename = f"qr_{prompt_id}.png"
+                    qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "output", qr_filename)
+                    qr_img.save(qr_path)
+                    
+                    response_data["qrcode_url"] = f"http://127.0.0.1:8000/output/{urllib.parse.quote(qr_filename)}"
+                
+                return web.json_response(response_data)
+        finally:
+            # Always explicitly free ComfyUI memory to prevent out-of-memory errors on next load.
+            # We use asyncio.create_task so it happens asynchronously AFTER we return the response.
+            asyncio.create_task(background_free_memory())
 
 app = web.Application(client_max_size=1024**3)
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+app.router.add_static('/output/', path=OUTPUT_DIR, name='output')
 app.router.add_get('/api/v1/models/{type}', get_models)
 app.router.add_post('/api/v1/generate', generate_image)
 

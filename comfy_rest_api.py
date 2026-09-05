@@ -115,6 +115,17 @@ def generate_qr_base64(data_dict):
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+def get_model_defaults(model_name):
+    defaults = {
+        "v1-5-pruned-emaonly.safetensors": {"cfg": 7.5, "steps": 25, "width": 512, "height": 512, "sampler_name": "euler_ancestral", "scheduler": "normal"},
+        "DreamShaper_8_pruned.safetensors": {"cfg": 6.5, "steps": 28, "width": 512, "height": 768, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "DreamShaperXL_Lightning.safetensors": {"cfg": 2.0, "steps": 6, "width": 1024, "height": 1024, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "DreamShaperXL_Turbo_v2.safetensors": {"cfg": 2.0, "steps": 6, "width": 1024, "height": 1024, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
+        "Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors": {"cfg": 1.5, "steps": 5, "width": 1344, "height": 768, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"},
+        "RealVisXL_V5.0_Lightning_fp16.safetensors": {"cfg": 1.5, "steps": 6, "width": 896, "height": 1152, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"}
+    }
+    return defaults.get(model_name, defaults["DreamShaper_8_pruned.safetensors"])
+
 async def generate_image(request):
     await check_auth(request)
     try:
@@ -126,26 +137,18 @@ async def generate_image(request):
     if not prompt:
         raise web.HTTPBadRequest(reason="'prompt' is mandatory")
         
-    model_name = payload.get("model_name", "v1-5-pruned-emaonly.safetensors")
+    model_name = payload.get("model_name", "DreamShaper_8_pruned.safetensors")
     negative_prompt = payload.get("negative_prompt", "")
     
     # Apply dynamic defaults based on model
-    if model_name == "DreamShaper_8_pruned.safetensors":
-        cfg = payload.get("cfg", 7.5)
-        steps = payload.get("steps", 30)
-        seed = payload.get("seed", random.randint(1, 999999999999999))
-        width = payload.get("width", 768)
-        height = payload.get("height", 512)
-    else:
-        # Default to v1_5_pruned_emaonly.safetensors values
-        cfg = payload.get("cfg", 7.5)
-        steps = payload.get("steps", 25)
-        seed = payload.get("seed", random.randint(1, 999999999999999))
-        width = payload.get("width", 512)
-        height = payload.get("height", 768)
-        
-    sampler_name = payload.get("sampler_name", "dpmpp_2m")
-    scheduler = payload.get("scheduler", "karras")
+    defaults = get_model_defaults(model_name)
+    cfg = payload.get("cfg", defaults["cfg"])
+    steps = payload.get("steps", defaults["steps"])
+    seed = payload.get("seed", random.randint(1, 999999999999999))
+    width = payload.get("width", defaults["width"])
+    height = payload.get("height", defaults["height"])
+    sampler_name = payload.get("sampler_name", defaults["sampler_name"])
+    scheduler = payload.get("scheduler", defaults["scheduler"])
     
     # Configure the graph template
     graph = json.loads(json.dumps(WORKFLOW_API))

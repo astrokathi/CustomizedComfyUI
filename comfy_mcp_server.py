@@ -7,6 +7,39 @@ API_URL = "http://localhost:8000/api/v1/generate"
 API_KEY = os.environ.get("COMFY_REST_API_KEY", "secret-key-123")
 
 @mcp.tool()
+def select_optimal_model(use_case_description: str) -> str:
+    """
+    Analyzes the user's desired image use-case and returns the optimal model_name and its ideal default parameters.
+    You MUST call this tool before calling text_to_image if the user has not explicitly specified a model name.
+    
+    Valid use cases include:
+    - "cinematic", "movie", "gritty", "architectural"
+    - "photography", "dslr", "realistic skin", "candid"
+    - "digital painting", "concept art", "video game"
+    - "2.5D", "fantasy", "illustration"
+    """
+    desc = use_case_description.lower()
+    
+    if any(keyword in desc for keyword in ["cinematic", "movie", "gritty", "architectural"]):
+        model = "Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors"
+        reason = "Excellent for cinematic realism, movie frames, gritty lighting, and architectural depth."
+    elif any(keyword in desc for keyword in ["photography", "dslr", "realistic skin", "candid", "photo", "realistic human"]):
+        model = "RealVisXL_V5.0_Lightning_fp16.safetensors"
+        reason = "Excellent for DSLR camera fidelity, candid photography, and zero AI plastic sheen."
+    elif any(keyword in desc for keyword in ["digital painting", "high resolution", "semi-realistic", "video game"]):
+        model = "DreamShaperXL_Lightning.safetensors"
+        reason = "Excellent for high-resolution digital painting, semi-realistic character art, and video game assets."
+    elif any(keyword in desc for keyword in ["2.5d", "fantasy", "illustration", "vibrant", "stylized"]):
+        model = "DreamShaper_8_pruned.safetensors"
+        reason = "Excellent for 2.5D illustration, fantasy portraits, and digital concept art."
+    else:
+        # Fallback
+        model = "DreamShaper_8_pruned.safetensors"
+        reason = "Defaulting to DreamShaper 8 as it is the most versatile all-rounder."
+
+    return f"Recommended Model: {model}\nReasoning: {reason}\nYou may now pass this model_name into the text_to_image tool."
+
+@mcp.tool()
 async def text_to_image(
     prompt: str,
     ctx: Context,

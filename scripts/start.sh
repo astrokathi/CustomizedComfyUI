@@ -26,11 +26,11 @@ fi
 # ---- Start PostgreSQL ----
 echo "[→] Starting PostgreSQL..."
 cd "${PROJECT_ROOT}"
-if command -v docker &>/dev/null; then
-    docker compose up -d 2>/dev/null
+if command -v docker &>/dev/null && docker info &>/dev/null; then
+    docker compose up -d 2>/dev/null || echo "[!] Docker daemon running but compose failed."
     echo "[✓] PostgreSQL started"
 else
-    echo "[!] Docker not found. PostgreSQL will not be available."
+    echo "[!] Docker not found or daemon not running. PostgreSQL will not be available."
 fi
 
 # ---- Activate venv ----

@@ -74,7 +74,7 @@ async def text_to_image(
     prompt: str,
     ctx: Context,
     model_name: str = "DreamShaper_8_pruned.safetensors",
-    negative_prompt: str = "",
+    negative_prompt: str = "lowres, text, error, cropped, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, out of frame, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck, username, watermark, signature",
     cfg: float = None,
     steps: int = None,
     width: int = None,

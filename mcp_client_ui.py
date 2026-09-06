@@ -26,17 +26,31 @@ server_params = StdioServerParameters(
     args=["comfy_mcp_server.py"]
 )
 
+PRESETS = [
+    "✨ No Preset (Freeform) | AI Autonomously Decides",
+    "✏️ Minimalist Flat Vector | Model: DreamShaperXL_Lightning.safetensors | Prefix: Minimalist flat vector illustration, solid colors, clean lines, corporate memphis style, white background",
+    "🖼️ Vintage Polaroid | Model: RealVisXL_V5.0_Lightning_fp16.safetensors | Prefix: Vintage polaroid photo, 1980s aesthetic, film grain, faded colors, flash photography",
+    "🧩 3D Isometric | Model: DreamShaperXL_Lightning.safetensors | Prefix: 3D isometric render, tilt-shift, claymation style, octane render, soft lighting, clean background",
+    "📸 Photorealistic Cinematic | Model: Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors | Prefix: Professional cinematic film still, masterpiece, 8k resolution, highly detailed, dramatic lighting",
+    "🌸 Studio Ghibli Anime | Model: DreamShaper_8_pruned.safetensors | Prefix: Anime style illustration, Studio Ghibli style, vibrant colors, beautiful anime art",
+    "🖌️ Watercolor Wash | Model: DreamShaper_8_pruned.safetensors | Prefix: Beautiful watercolor painting, soft edges, pastel colors, artistic brush strokes, paper texture",
+    "🖤 Ink & Crosshatch | Model: DreamShaper_8_pruned.safetensors | Prefix: Black and white ink sketch, crosshatching, pen and ink, highly detailed, comic book style",
+    "🧱 Lego / Voxel Art | Model: DreamShaperXL_Lightning.safetensors | Prefix: Voxel art, macro photography of lego bricks, 3d blocky style, colorful, clean studio lighting",
+    "🕹️ Cyberpunk Neon | Model: DreamShaperXL_Lightning.safetensors | Prefix: Cyberpunk aesthetic, neon lighting, dark synthwave, futuristic, glowing accents"
+]
+
 SYSTEM_PROMPT = """You are a highly capable AI Art Director. Your goal is to help the user generate stunning images using ComfyUI.
 You have access to THREE tools:
-1. `select_optimal_model`: Call this FIRST with the user's base request to determine the best model to use.
-2. `ram_checker`: Call this SECOND to verify the system has enough memory to load the model. If it fails, use the recommended fallback model instead!
+1. `select_optimal_model`: Call this FIRST with the user's base request to determine the best model to use. (Skip if user provided a preset model).
+2. `ram_checker`: Call this SECOND to verify the system has enough memory to load the model.
 3. `text_to_image`: Call this THIRD to actually generate the image using the final verified model name.
 
 IMPORTANT INSTRUCTIONS:
-- You MUST aggressively enhance the user's simple prompt into a highly detailed, comma-separated Stable Diffusion prompt BEFORE calling `text_to_image`. 
-  - Add lighting, camera, aesthetic, and quality tags (e.g. "masterpiece, best quality, 8k resolution, cinematic lighting, sharp focus").
-- You MUST formulate a strong negative prompt (e.g. "(worst quality, low quality:1.3), blurry, bad anatomy").
-- You MUST pass the exact `model_name` (or the fallback if RAM check failed) into `text_to_image`.
+- You MUST aggressively enhance the user's simple prompt into a highly detailed, comma-separated Stable Diffusion prompt.
+- If the user provides a "Style Preset Prefix" in their request, you MUST prepend it exactly to the beginning of your positive prompt!
+- If the user selects "Create Variation (Same Seed)", you MUST lookup the exact Seed and Model used in the LAST generated image (from the chat history) and use them! Enhance their new prompt to improve clarity, lighting, or focus while keeping the exact same structural composition via the Seed.
+- You MUST pass the exact `model_name` into `text_to_image`.
+- At the very end of your final response to the user, you MUST provide exactly 3 creative follow-up prompt suggestions (e.g. "Try this with dramatic neon lighting", "Change the time of day to sunset") formatted as a bulleted list under the heading "💡 Try these variations:".
 
 HOW TO USE TOOLS:
 To use a tool, you MUST output a JSON block inside backticks like this:
@@ -64,7 +78,8 @@ Or for the image generation:
   "args": {
     "prompt": "enhanced positive prompt",
     "negative_prompt": "enhanced negative prompt",
-    "model_name": "returned model name"
+    "model_name": "returned model name",
+    "seed": 123456789
   }
 }
 ```
@@ -93,7 +108,7 @@ def extract_tool_call(content):
             
     return None
 
-async def chat_with_agent(message, history):
+async def chat_with_agent(message, history, preset, mode):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     
     # Format Gradio history for OpenAI
@@ -104,7 +119,21 @@ async def chat_with_agent(message, history):
         elif isinstance(item, dict):
             messages.append({"role": item.get("role", "user"), "content": item.get("content", "")})
         
-    messages.append({"role": "user", "content": message})
+    injected_prompt = f"User Message: {message}\n"
+    
+    if mode == "Create Variation (Same Seed, Enhanced Prompt)":
+        injected_prompt += "\nINSTRUCTION: The user wants a variation of the PREVIOUS image. Look at the last image's config in the chat history, extract its exact 'Seed' and 'Model', and use them! Improve the user's prompt for better clarity/lighting."
+        
+    if preset and preset != "✨ No Preset (Freeform) | AI Autonomously Decides":
+        try:
+            _, model_part, prefix_part = preset.split(" | ")
+            model_name = model_part.replace("Model: ", "")
+            prefix = prefix_part.replace("Prefix: ", "")
+            injected_prompt += f"\nINSTRUCTION: The user selected a stylistic preset. You MUST use model_name='{model_name}' and you MUST strictly prepend this prefix to the positive prompt: '{prefix}'"
+        except:
+            pass
+            
+    messages.append({"role": "user", "content": injected_prompt})
     
     yield "Thinking..."
     
@@ -159,8 +188,21 @@ async def chat_with_agent(message, history):
 with gr.Blocks(theme=gr.themes.Monochrome()) as demo:
     gr.Markdown("# 🎨 ComfyUI AI Art Director\nPowered by NVIDIA Nemotron & MCP")
     
+    with gr.Row():
+        preset_dropdown = gr.Dropdown(
+            choices=PRESETS,
+            value=PRESETS[0],
+            label="Style Preset (Collages)"
+        )
+        mode_radio = gr.Radio(
+            choices=["New Concept", "Create Variation (Same Seed, Enhanced Prompt)"],
+            value="New Concept",
+            label="Generation Mode"
+        )
+    
     gr.ChatInterface(
         fn=chat_with_agent,
+        additional_inputs=[preset_dropdown, mode_radio],
         description="Describe the image you want to create. The AI will autonomously select the best model, engineer a detailed prompt, and generate the image!",
         examples=[
             ["I want a cinematic, gritty shot of a cyberpunk city at night with neon reflections on wet asphalt."],

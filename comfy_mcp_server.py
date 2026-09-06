@@ -75,6 +75,7 @@ async def text_to_image(
     ctx: Context,
     model_name: str = "DreamShaper_8_pruned.safetensors",
     negative_prompt: str = "lowres, text, error, cropped, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, out of frame, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck, username, watermark, signature",
+    seed: int = None,
     cfg: float = None,
     steps: int = None,
     width: int = None,
@@ -124,6 +125,7 @@ async def text_to_image(
         "model_name": model_name
     }
     
+    if seed is not None: payload["seed"] = seed
     if cfg is not None: payload["cfg"] = cfg
     if steps is not None: payload["steps"] = steps
     if width is not None: payload["width"] = width
@@ -149,10 +151,11 @@ async def text_to_image(
                     
                     md_response = f"### Image Generated Successfully!\n\n"
                     md_response += f"![Generated Image]({image_url})\n\n"
+                    md_response += f"**[📥 Download High-Res Image]({image_url})**\n\n"
                     if "qrcode_url" in data:
                         md_response += f"![QR Code]({data['qrcode_url']})\n\n"
                     md_response += f"**Model**: {config.get('model_name')}\n"
-                    md_response += f"**Steps**: {config.get('steps')} | **CFG**: {config.get('cfg')}\n"
+                    md_response += f"**Seed**: {config.get('seed')} | **Steps**: {config.get('steps')} | **CFG**: {config.get('cfg')}\n"
                     md_response += f"**Resolution**: {config.get('width')}x{config.get('height')}\n"
                     md_response += f"**Prompt**: {config.get('prompt')}\n"
                     

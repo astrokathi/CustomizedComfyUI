@@ -53,7 +53,7 @@ WORKFLOW_API = {
   },
   "7": {
     "inputs": {
-      "text": "negative prompt goes here",
+      "text": "lowres, text, error, cropped, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, out of frame, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck, username, watermark, signature",
       "clip": [ "4", 1 ]
     },
     "class_type": "CLIPTextEncode"
@@ -146,7 +146,7 @@ def get_model_defaults(model_name):
         "Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors": {"cfg": 1.5, "steps": 5, "width": 1344, "height": 768, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"},
         "RealVisXL_V5.0_Lightning_fp16.safetensors": {"cfg": 1.5, "steps": 6, "width": 896, "height": 1152, "sampler_name": "dpmpp_2m_sde", "scheduler": "karras"}
     }
-    return defaults.get(model_name, defaults["DreamShaper_8_pruned.safetensors"])
+    return defaults.get(model_name, defaults["RealVisXL_V5.0_Lightning_fp16.safetensors"])
 
 async def generate_image(request):
     await check_auth(request)
@@ -176,7 +176,7 @@ async def generate_image(request):
     graph = json.loads(json.dumps(WORKFLOW_API))
     graph["4"]["inputs"]["ckpt_name"] = model_name
     graph["6"]["inputs"]["text"] = prompt
-    graph["7"]["inputs"]["text"] = negative_prompt
+    # graph["7"]["inputs"]["text"] = negative_prompt
     graph["5"]["inputs"]["width"] = width
     graph["5"]["inputs"]["height"] = height
     graph["3"]["inputs"]["seed"] = seed
